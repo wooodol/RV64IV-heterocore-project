@@ -8,7 +8,7 @@ output reg ifid_write, hazard, pcwrite
     
     always@(*)begin
         //load data hazard
-        if(memread_ex && rd_ex && (rd_ex == rs_id || rd_ex == rt_id))begin
+        if(memread_ex && rd_ex && (dst_ex == rs_id || dst_ex == rt_id))begin
             ifid_write = 1'b0;
             hazard = 1'b1;
             pcwrite = 1'b0;

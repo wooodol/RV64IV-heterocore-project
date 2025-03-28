@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module if_id(
-input clk, rstn, if_flush, ifid_write,
+input clk, rstn, ifid_flush, ifid_write,
 input [31:0] inst_if,
 input [63:0] pcadd4_if,
 output reg [31:0] inst_id,
@@ -14,8 +14,8 @@ output reg [63:0] pcadd4_id
             inst_id <= 32'b0;
         end 
         else begin
-            if(if_flush) begin
-                pcadd4_id <= 64'b0;
+            if(ifid_flush) begin
+                pcadd4_id <= 64'd0;
                 inst_id <= 32'b0;
             end
             else if(ifid_write)begin

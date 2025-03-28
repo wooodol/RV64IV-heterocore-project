@@ -17,18 +17,34 @@ output reg [3:0] alu_control
                         case(funct7)
                             7'b0000000: alu_control = 4'b0010; //add
                             7'b0100000: alu_control = 4'b0110; //sub
+                            7'b0000001: alu_control = 4'b1001;//mulw                          
                             default: alu_control = 4'b0000; //and
                         endcase 
                     3'b001: alu_control = 4'b0101; // sll(shift left)
                     3'b010: alu_control = 4'b1011; //slt(set less than)
-                    3'b011: alu_control = 4'b1010; //sltu
-                    3'b100: alu_control = 4'b1111; //xor
-                    3'b110: alu_control = 4'b0001; //or
-                    3'b111: alu_control = 4'b0000; //and
+                    3'b011: alu_control = 4'b1010; //sltu                   
+                    3'b100:
+                       case(funct7)
+                            7'b0000001: alu_control = 4'b1101; //divw
+                            7'b0000000: alu_control = 4'b1111; //xor
+                            default: alu_control = 4'b0000; //and
+
+                       endcase
+                    3'b110:
+                       case(funct7) 
+                            7'b0000000: alu_control = 4'b0001; //or
+                            7'b0000001: alu_control = 4'b1110 ;//remw
+                            default: alu_control = 4'b0000; // and
+
+                       endcase
+                    3'b111:
+                       case(funct7)
+                            7'b0000000: alu_control = 4'b0000; //and
+                       endcase 
                     3'b101:
                         case(funct7)
-                            7'b0000000: alu_control = 4'b0000; //srl(shift right logical)
-                            7'b0100000: alu_control = 4'b0000; //sra(sguft right arithmetic)
+                            7'b0000000: alu_control = 4'b0111; //srl(shift right logical)
+                            7'b0100000: alu_control = 4'b1000; //sra(sguft right arithmetic)
                             default: alu_control = 4'b0000;
                         endcase
                     default: alu_control = 4'b0000;
@@ -40,13 +56,19 @@ output reg [3:0] alu_control
                     3'b100: alu_control = 4'b1111; //xori
                     3'b111: alu_control = 4'b0000; //andi
                     3'b110: alu_control = 4'b0001; //ori
-                    3'b010: alu_control = 4'b0111; //slti
+                    3'b010: alu_control = 4'b1011; //slti
                     3'b011: alu_control = 4'b1010; //sltiu
-                    default: alu_control = 4'b0000; //andi
+                    3'b001: alu_control = 4'b0101; // slli(shift left)
+                    3'b101: 
+                        case(funct7)
+                            7'b0000000: alu_control = 4'b0111; //srli
+                            7'b0100000: alu_control = 4'b1000;//srai 
+                            default: alu_control = 4'b0000; //andi                        
+                        endcase
+            
+                    default: alu_control = 4'b0000; //and
                 endcase
             end
-            default: alu_control = 4'b0000; //and
         endcase
     end
-    
 endmodule

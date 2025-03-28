@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module id_ex(
-input clk, hazard, rstn, alusrc_id, memread_id, memwrite_id,
+input clk, idex_flush, rstn, alusrc_id, memread_id, memwrite_id,
       memtoreg_id, regwrite_id, regdst_id,jalr_id, jmp, branch,
 input [1:0] aluop_id,
 input [2:0] funct3_id,
@@ -42,7 +42,7 @@ output reg [63:0] regrd1_ex, regrd2_ex, signextend_ex, pcadd4_ex, branch_addr_ex
             branch_addr_ex <= 64'b0;
         end
         else begin
-            if(hazard)begin
+            if(idex_flush)begin
                 funct3_ex   <= 3'b0;
                 funct7_ex   <= 7'b0;
                 regdst_ex   <= 1'b0;

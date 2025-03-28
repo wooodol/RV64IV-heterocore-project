@@ -2,7 +2,7 @@
 
 module pc(
 input clk, rstn, pcwrite,
-input [63:0] pcin_if, 
+input [63:0] pcin_if,
 output reg [63:0] pcout_if
     );
     
@@ -11,7 +11,7 @@ output reg [63:0] pcout_if
     assign enable = pcwrite & rstn;
     
     always@(posedge clk or negedge rstn)begin
-        if(!rstn) pcout_if <= 64'b0;
+        if(!rstn) pcout_if <= 64'hFFFFFFFFFFFFFFFC;
         else begin 
             if(enable) pcout_if <= pcin_if;
         end

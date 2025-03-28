@@ -3,15 +3,16 @@
 module CPU_top(
 input clk, rstn
     );
-    //
+
     //IF
     wire [31:0] inst_if;
-    wire [63:0] pcadd4_if, pcin_if, pcout_if, branch_if;
+    wire [63:0] pcadd4_if, pcin_if, pcout_if, branch_if, pc_exception, pc_ex_if;
     
     //ID
-    wire pcwrite_en, ifid_write, branch, equal, hazard, jmp, isbranch, if_flush,
+    wire pcwrite_en, ifid_write, branch, equal, hazard, jmp, isbranch, branch_flush,
          alusrc_id, memread_id, memwrite_id, memtoreg_id, regwrite_id, regdst_id, jalr_id, branch_select
-         ,pcwrite_bu;
+         ,pcwrite_bu, illegal_opcode, inst_access_fault, exception_mod, exception_handled,
+         ifid_flush, idex_flush, exmem_flush, memwb_flush, exception_ret;
     wire [1:0] aluop_id, forwardA_id, forwardB_id;
     wire [2:0] funct3_id,sign_select_id;
     wire [4:0] rs1_id, rs2_id, rd_id;
@@ -19,23 +20,23 @@ input clk, rstn
     wire [31:0] inst_id;
     wire [63:0] pcadd4_id, signextend_id, branch_addr, jmp_addr,
                 regrd1_id, regrd2_id, bmuxA, bmuxB, signextend_itype, signextend_stype, 
-                signextend_utype, signextend_btype;
+                signextend_utype, signextend_btype, signextend_jtype;
     
     //ex
     wire memread_ex, regwrite_ex, alusrc_ex, regdst_ex,
          memwrite_ex, memtoreg_ex, jalr_ex, jmp_ex, branch_ex, msb2;
     wire [1:0] aluop_ex, forwardA, forwardB;
-    wire [2:0] funct3_ex;
+    wire [2:0] funct3_ex, trap_type;
     wire [3:0] alucontrol_ex;
     wire [4:0] rs_ex, rt_ex, rd_ex, dst_ex;
     wire [6:0] funct7_ex;
     wire [63:0] signextend_ex, aluresult_ex, regrd1_ex, regrd2_ex, forwardBout_ex,
-                aluin1_ex, aluin2_ex, aluresult_exx, pcadd4_ex, branch_addr_ex;
+                aluin1_ex, aluin2_ex, aluresult_exx, pcadd4_ex, branch_addr_ex, mepc_addr, mtvec_addr;
     
     //mem
-    wire regwrite_mem, memread_mem, memwrite_mem, memtoreg_mem;
+    wire regwrite_mem, memread_mem, memwrite_mem, memtoreg_mem, mem_access_fault;
     wire [4:0] dst_mem;
-    wire [63:0] aluresult_mem, forwardBout_mem, dmemrd_mem;
+    wire [63:0] aluresult_mem, forwardBout_mem, dmemrd_mem, pcadd4_mem;
     
     //wb
     wire memtoreg_wb, regwrite_wb;
@@ -65,15 +66,21 @@ input clk, rstn
     
     
     //pc+4
+    assign pc_exception = exception_handled? mepc_addr : mtvec_addr;
     assign pcwrite_en = pcwrite & pcwrite_bu;
-    assign pcadd4_if =  jalr_ex? aluresult_ex : (pcout_if + 4);
+    assign pcadd4_if =  (exception_mod|exception_handled)? pc_exception: jalr_ex? aluresult_ex : (pcout_if + 4);
     assign branch_if = branch_select? branch_addr_ex : branch_addr;
+    assign pc_ex_if = pcout_if + 4;
     
     
     //instruction cache memory
     (* DONT_TOUCH = "true" *) instruction_mem instruction_cache_mem(
-    .pcout_if(pcout_if),//in
-    .inst_if(inst_if)//out
+    .clk(clk),//in
+    .rstn(rstn),
+    .pcwrite(pcwrite_en),
+    .pcin_if(pcin_if),
+    .inst_if(inst_if),//out
+    .inst_access_fault(inst_access_fault)
     );
     
     
@@ -81,7 +88,7 @@ input clk, rstn
     (* DONT_TOUCH = "true" *) if_id if_id(
     .clk(clk),//in
     .rstn(rstn),
-    .if_flush(if_flush),
+    .ifid_flush(ifid_flush),
     .ifid_write(ifid_write),
     .inst_if(inst_if),
     .pcadd4_if(pcadd4_if),
@@ -117,7 +124,9 @@ input clk, rstn
     assign signextend_itype = {{52{inst_id[31]}},inst_id[31:20]};
     assign signextend_stype = {{52{inst_id[31]}},{inst_id[31:25],inst_id[11:7]}};
     assign signextend_utype = {{44{inst_id[31]}},inst_id[31:12]};
-    assign signextend_btype = {{52{inst_id[31]}},{inst_id[31],inst_id[7],inst_id[30:25],inst_id[11:8]}};
+    assign signextend_btype = {{51{inst_id[31]}},{inst_id[31],inst_id[7],inst_id[30:25],inst_id[11:8]}, 1'b0};
+    assign signextend_jtype = {{43{inst_id[31]}}, inst_id[31], inst_id[19:12], inst_id[20], inst_id[30:21], 1'b0};
+    
     
     (* DONT_TOUCH = "true" *) sign_mux sign_mux(
     .a(signextend_itype),//in
@@ -130,10 +139,8 @@ input clk, rstn
     
     
     //branch_addr, jump_addr, equal
-    wire [63:0] j_imm;
-    assign j_imm = {{44{inst_id[31]}}, inst_id[31], inst_id[19:12], inst_id[20], inst_id[30:21]};
-    assign branch_addr = pcadd4_id + (signextend_id << 2);
-    assign jmp_addr = pcadd4_id + (j_imm << 2); 
+    assign branch_addr = pcadd4_id - 64'd4 + (signextend_id << 1);
+    assign jmp_addr = pcadd4_id - 64'd4 + (signextend_jtype << 1);
     assign equal = (bmuxA == bmuxB);
     
     
@@ -169,7 +176,9 @@ input clk, rstn
     .regwrite(regwrite_id),
     .aluop(aluop_id),
     .regdst_id(regdst_id),
-    .jalr_id(jalr_id)
+    .jalr_id(jalr_id),
+    .illegal_opcode(illegal_opcode),
+    .exception_ret(exception_ret)
     );
     
     
@@ -187,7 +196,7 @@ input clk, rstn
     .funct3(funct3_id),
     .funct3_ex(funct3_ex),
     .isbranch(isbranch),//out
-    .if_flush(if_flush),
+    .if_flush(branch_flush),
     .branch_select(branch_select),
     .pcwrite(pcwrite_bu)
     );
@@ -221,11 +230,29 @@ input clk, rstn
     .o(bmuxB)//out
     );
     
+    //flush control
+    (* DONT_TOUCH = "true" *) flush_control flush_control(
+    .trap_type(trap_type), //in
+    .branch_flush(branch_flush),
+    .hazard(hazard),
+    .exception_ret(exception_ret),
+    .ifid_flush(ifid_flush), //out
+    .idex_flush(idex_flush),
+    .exmem_flush(exmem_flush),
+    .memwb_flush(memwb_flush),
+    .exception_handled(exception_handled)
+    );
+    
+    //exception pc control
+    (* DONT_TOUCH = "true" *) exception_pc_ctrl exception_pc_ctrl(
+    .trap_type(trap_type),
+    .exception_mod(exception_mod)
+    );
     
     //id_ex
     (* DONT_TOUCH = "true" *) id_ex id_ex(
     .clk(clk),//in
-    .hazard(hazard),
+    .idex_flush(idex_flush),
     .funct3_id(funct3_id),
     .funct7_id(funct7_id),
     .rstn(rstn),
@@ -327,10 +354,28 @@ input clk, rstn
     .forwardB(forwardB)
     );
     
+    
     //dst
     assign dst_ex = regdst_ex? rt_ex : rd_ex;
     
-    //ex_mem
+    
+    //trap detector
+    (* DONT_TOUCH = "true" *) trap_detection trap_detection(
+    .rstn(rstn), //in
+    .clk(clk),
+    .illegal_opcode(illegal_opcode),
+    .inst_access_fault(inst_access_fault),
+    .mem_access_fault(mem_access_fault),
+    .pc_ex_if(pc_ex_if),
+    .pcadd4_id(pcadd4_id),
+    .pcadd4_ex(pcadd4_ex),
+    .pcadd4_mem(pcadd4_mem),
+    .trap_type(trap_type), //out
+    .mepc(mepc_addr),
+    .mtvec_addr(mtvec_addr)
+    );
+    
+    //ex_mem & data_mem
     (* DONT_TOUCH = "true" *) ex_mem ex_mem(
     .clk(clk),//in
     .rstn(rstn),
@@ -341,27 +386,20 @@ input clk, rstn
     .dst_ex(dst_ex),
     .aluresult_ex(aluresult_exx),
     .forwardBout_ex(forwardBout_ex),
+    .exmem_flush(exmem_flush),
+    .pcadd4_ex(pcadd4_ex),
     .memread_mem(memread_mem), //out
-    .memwrite_mem(memwrite_mem),
     .memtoreg_mem(memtoreg_mem),
     .regwrite_mem(regwrite_mem),
+    .dmemrd_mem(dmemrd_mem),
+    .mem_access_fault(mem_access_fault),
     .dst_mem(dst_mem),
     .aluresult_mem(aluresult_mem),
-    .forwardBout_mem(forwardBout_mem)
+    .pcadd4_mem(pcadd4_mem)
     );
     
     
     //MEM-------------------------------------------------------------------
-    //data cache memory
-    (* DONT_TOUCH = "true" *) data_mem data_cache_mem(
-    .clk(clk),//in
-    .addr(aluresult_mem),
-    .wd(forwardBout_mem),
-    .memwrite_mem(memwrite_mem),
-    .memread_mem(memread_mem),
-    .rd(dmemrd_mem)//out
-    );
-    
     
     //mem_wb
     (* DONT_TOUCH = "true" *) mem_wb mem_wb(
@@ -372,6 +410,7 @@ input clk, rstn
     .dst_mem(dst_mem),
     .dmemrd_mem(dmemrd_mem),
     .aluresult_mem(aluresult_mem),
+    .memwb_flush(memwb_flush),
     .memtoreg_wb(memtoreg_wb),//out
     .regwrite_wb(regwrite_wb),
     .dst_wb(dst_wb),

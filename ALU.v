@@ -7,41 +7,101 @@ output sub_carryout,
 output reg [63:0] result
     );
     
-    wire [63:0] add_in1, add_in2, sub_in1, sub_in2;
-    
-    wire add_carryout;
-    wire [63:0] add_out;
+    wire [63:0] sub_in1, sub_in2;
     wire [63:0] sub_out;
     
-    always@(alu_control, aluin1_ex, aluin2_ex, add_out,sub_out)begin
+    /*
+    wire [63:0] add_in1, add_in2, sub_in1, sub_in2;
+    wire signed [63:0] mul_in1, mul_in2, div_in1, div_in2;
+    wire add_carryout;
+    wire [63:0] add_out;
+    wire [63:0] MULW_out;
+    wire [63:0] DIVW_out;
+    wire [63:0] REMW_out;
+    */
+    
+    always@(alu_control, aluin1_ex, aluin2_ex ,sub_out)begin
         case(alu_control)
             4'b0000: begin //AND
                 result = aluin1_ex & aluin2_ex; 
             end
+            
             4'b0001: begin //OR
                 result = aluin1_ex | aluin2_ex; 
             end
+            
             4'b0010:begin //ADD  
-                result = add_out;
+                result = aluin1_ex + aluin2_ex;
             end
+            
             4'b0110:begin //SUB
-                result = sub_out;
+                result = aluin1_ex - aluin2_ex;
             end
-            4'b0111: result = (aluin1_ex < aluin2_ex)? 1:0; //SLT
+            
+            4'b1011: begin//SLT
+                if (aluin1_ex[63] == 1'b1 && aluin2_ex[63] == 1'b0) result = 1; 
+                else if (aluin1_ex[63] == 1'b0 && aluin2_ex[63] == 1'b1) result = 0;  
+                else if (aluin1_ex[63] == 1'b0 && aluin2_ex[63] == 1'b0 && aluin1_ex < aluin2_ex) result = 1;  
+                else if (aluin1_ex[63] == 1'b1 && aluin2_ex[63] == 1'b1 && aluin1_ex > aluin2_ex) result = 1;  
+                else result = 0;  
+            end
+               
             4'b1111: result = aluin1_ex ^ aluin2_ex; //XOR
             4'b1100: result = ~(aluin1_ex|aluin2_ex); //NOR
+           
+            /*
+            4'b1001: begin//MULW
+                result = MULW_out; //result = MULH_out;
+            end
+            4'b1101: begin//DIVW
+                if(aluin2_ex == 0) result = -1;
+                else result = DIVW_out;
+            end
+            4'b1110: begin//REMW 
+                if(aluin2_ex == 0) result = -1;
+                else result = REMW_out;
+            end
+            */
+            
+            4'b0101 : begin//sll
+                result = aluin1_ex << aluin2_ex[5:0];//max 64 shift
+            end
+            4'b1010 : begin//sltu/
+                result = (aluin1_ex < aluin2_ex) ? 1 : 0;
+            end
+            4'b0111 : begin //srl
+                result = aluin1_ex >> aluin2_ex[5:0];//max 64 shift
+            end
+            4'b1000: begin //sra
+                result = $signed(aluin1_ex) >>> aluin2_ex[5:0];
+            end
             default: begin
                 result = 64'b0;
             end
-            //MUL
-            //DIV
+           
         endcase
     end
     
-    assign add_in1 = aluin1_ex;
-    assign add_in2 = aluin2_ex;
     assign sub_in1 = aluin1_ex;
     assign sub_in2 = aluin2_ex;
+    
+    FA_alu sub_alu(
+    .in1(sub_in1),
+    .in2(sub_in2),
+    .result(sub_out),
+    .mod(1),
+    .carry_out(sub_carryout)
+    );
+    
+    /*
+    assign add_in1 = aluin1_ex;
+    assign add_in2 = aluin2_ex;
+    
+    assign mul_in1 = aluin1_ex; 
+    assign mul_in2 = aluin2_ex; 
+    assign div_in1 = aluin1_ex; 
+    assign div_in2 = aluin2_ex;
+   
     
     FA_alu add_alu(
     .in1(add_in1),
@@ -51,13 +111,20 @@ output reg [63:0] result
     .carry_out(add_carryout)
     );
     
-    FA_alu sub_alu(
-    .in1(sub_in1),
-    .in2(sub_in2),
-    .result(sub_out),
-    .mod(1),
-    .carry_out(sub_carryout)
+
+    multiplier_128 mul_alu (
+    .multiplier(mul_in1),
+    .multiplicand(mul_in2),
+   // .mulh_result(),
+    .mulw_result(MULW_out)
     );
+    
+    DIV div_alu(
+    .quotient(div_in1),
+    .dividend(div_in2),
+    .alu_control(alu_control),
+    .signed_result(DIVW_out)
+    );*/
     
 endmodule
 
@@ -112,3 +179,39 @@ module adder(
     assign sum = cin^a^b;
     
 endmodule
+
+/*
+//divider
+module DIV(
+    input signed [63:0] quotient,
+    input signed [63:0] dividend,
+    input [3:0] alu_control,
+    output signed [63:0] signed_result
+);
+
+    assign signed_result = (alu_control == 4'b0000) ? ($signed(quotient) / $signed(dividend)) : 
+                           (alu_control == 4'b0010) ? ($signed(quotient) % $signed(dividend)) : 64'b0;
+
+endmodule
+
+//multiplier
+module multiplier_128(
+    input signed [63:0] multiplier,
+    input signed [63:0] multiplicand,
+    output signed [63:0] mulh_result,
+    output signed [63:0] mulw_result,
+    output signed [127:0] result
+);
+
+    assign result = multiplier * multiplicand;
+
+    assign mulh_result = (result[127] == 0 && |result[126:64] == 1) || (result[127] == 1 && result[126:64] == 0) ? result[127:64] : 64'b0;
+    assign mulw_result = result[63:0];
+
+endmodule
+*/
+
+
+
+
+
